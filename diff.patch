@@ -1,22 +1,65 @@
+diff -Nur linux-3.13/arch/x86/include/asm/syscalls.h linux-3.13new/arch/x86/include/asm/syscalls.h
+--- linux-3.13/arch/x86/include/asm/syscalls.h	2014-01-20 08:10:07.000000000 +0530
++++ linux-3.13new/arch/x86/include/asm/syscalls.h	2018-02-09 15:03:02.570311691 +0530
+@@ -49,6 +49,5 @@
+ /* kernel/sys_x86_64.c */
+ asmlinkage long sys_mmap(unsigned long, unsigned long, unsigned long,
+ 			 unsigned long, unsigned long, unsigned long);
+-
+ #endif /* CONFIG_X86_32 */
+ #endif /* _ASM_X86_SYSCALLS_H */
+diff -Nur linux-3.13/arch/x86/syscalls/syscall_64.tbl linux-3.13new/arch/x86/syscalls/syscall_64.tbl
+--- linux-3.13/arch/x86/syscalls/syscall_64.tbl	2014-01-20 08:10:07.000000000 +0530
++++ linux-3.13new/arch/x86/syscalls/syscall_64.tbl	2018-02-09 14:44:12.822311691 +0530
+@@ -320,7 +320,7 @@
+ 311	64	process_vm_writev	sys_process_vm_writev
+ 312	common	kcmp			sys_kcmp
+ 313	common	finit_module		sys_finit_module
+-
++314	common	sh_task_info		sys_sh_task_info
+ #
+ # x32-specific system call numbers start at 512 to avoid cache impact
+ # for native 64-bit operation.
+diff -Nur linux-3.13/include/linux/syscalls.h linux-3.13new/include/linux/syscalls.h
+--- linux-3.13/include/linux/syscalls.h	2014-01-20 08:10:07.000000000 +0530
++++ linux-3.13new/include/linux/syscalls.h	2018-02-09 15:07:13.902311691 +0530
+@@ -847,4 +847,5 @@
+ asmlinkage long sys_kcmp(pid_t pid1, pid_t pid2, int type,
+ 			 unsigned long idx1, unsigned long idx2);
+ asmlinkage long sys_finit_module(int fd, const char __user *uargs, int flags);
++asmlinkage long sys_sh_task_info(pid_t my_pid, char* fname);
+ #endif
 diff -Nur linux-3.13/kernel/sys.c linux-3.13new/kernel/sys.c
---- linux-3.13/kernel/sys.c	2018-02-15 19:00:41.710162811 +0530
+--- linux-3.13/kernel/sys.c	2014-01-20 08:10:07.000000000 +0530
 +++ linux-3.13new/kernel/sys.c	2018-02-15 20:09:57.479390614 +0530
-@@ -127,13 +127,54 @@
- 	process=pid_task(pid_struct, PIDTYPE_PID);
- 	char data[1001]; 
- 	int len; 
+@@ -113,7 +113,97 @@
+ 
+ EXPORT_SYMBOL(fs_overflowuid);
+ EXPORT_SYMBOL(fs_overflowgid);
++/*
++Our system call
++*/
++SYSCALL_DEFINE2(sh_task_info, pid_t, my_pid , char* , fname )
++{		
++	struct task_struct *process;
++	struct pid *pid_struct;
++	struct file *file;
++	pid_struct=find_get_pid(my_pid);
++	if(pid_struct==NULL)
++		return -ESRCH;
++	process=pid_task(pid_struct, PIDTYPE_PID);
++	char data[1001]; 
++	int len; 
 +	struct sched_entity shedtemp = process->se;
 +	struct thread_struct threadtemp = process->thread;	
 +	struct signal_struct *stemp = process->signal;
 +	struct sighand_struct *shtemp = process->sighand;
- 	if(process->parent)
- 	{
--		len=sprintf(data, "Process: %s\nPID: %ld\nProcess State: %ld\nPriority: %ld\nParent Process: %s\nParent PID: %ld\n", process->comm, (long)task_pid_nr(process), (long)process->state, (long)process->prio, process->parent->comm, (long)task_pid_nr(process->parent));
++	if(process->parent)
++	{
 +		len=sprintf(data, "Process: %s\nPID: %ld\nTGID: %ld\nProcess State: %ld\nPriority: %ld\nNormal Priority: %ld\nStatic Priority: %ld\nRealTime Priority: %ld\nParent Process: %s\nParent PID: %ld\nSched_entity:on_rq: %ld\nSched_entity:vruntime: %ld\nSignal_struct address: %ld\nSighand_struct address: %ld\nThread_struct:sp: %ld\nProcess CPU: %ld\n", process->comm, (long)task_pid_nr(process),(long)task_tgid_vnr(process), (long)process->state, (long)process->prio, (long)process->normal_prio, (long)process->static_prio, (long)process->rt_priority, process->parent->comm, (long)task_pid_nr(process->parent), (long)shedtemp.on_rq, (long)shedtemp.vruntime, (long)&stemp, (long)&shtemp,(long)threadtemp.sp, (long)process->on_cpu );
- 	}
- 	else
-     	{
--	len=sprintf(data, "Process: %s\nPID_Number: %ld\nProcess State: %ld\nPriiority: %ld\n ", process->comm, (long)task_pid_nr(process), (long)process->state, (long)process->prio);
++	}
++	else
++    	{
 +		len=sprintf(data, "Process: %s\nPID: %ld\nTGID: %ld\nProcess State: %ld\nPriority: %ld\nNormal Priority: %ld\nStatic Priority: %ld\nRealTime Priority: %ld\nSched_entity:on_rq: %ld\nSched_entity:vruntime: %ld\nSignal_struct address: %ld\nSighand_struct address: %ld\nThread_struct:sp: %ld\nProcess CPU: %ld\n", process->comm, (long)task_pid_nr(process),(long)task_tgid_vnr(process), (long)process->state, (long)process->prio, (long)process->normal_prio, (long)process->static_prio, (long)process->rt_priority, (long)shedtemp.on_rq, (long)shedtemp.vruntime, (long)&stemp, (long)&shtemp,(long)threadtemp.sp, (long)process->on_cpu );
 +	}
 +	sigset_t *block =&(process->blocked);
@@ -34,7 +77,7 @@ diff -Nur linux-3.13/kernel/sys.c linux-3.13new/kernel/sys.c
 +			l1+= sprintf(bsignal+l1, " %d ", i);		
 +		}
 +		else if (sigismember(block, i)==0)
-+
+ 
 +		{
 +			l2+=sprintf(ubsignal+l2, " %d ", i);
 +		}
@@ -55,32 +98,65 @@ diff -Nur linux-3.13/kernel/sys.c linux-3.13new/kernel/sys.c
 +		{
 +			l2+=sprintf(rubsignal+l2, " %d ", i);
 +		}
- 	}
- 	loff_t pos=0;
- 	mm_segment_t old_fs = get_fs();
-@@ -144,15 +185,23 @@
- 		return -EEXIST;
- 	if (fd >= 0) {
- 	  sys_write(fd, data, strlen(data));
--	  file = fget(fd);
++	}
++	loff_t pos=0;
++	mm_segment_t old_fs = get_fs();
++  	int fd; 
++	set_fs(KERNEL_DS);
++	fd = sys_open(fname, O_WRONLY|O_CREAT|O_EXCL, 0644);
++	if(fd==-EEXIST)
++		return -EEXIST;
++	if (fd >= 0) {
++	  sys_write(fd, data, strlen(data));
 +	  sys_write(fd, bsignal, strlen(bsignal));
 +	  sys_write(fd, ubsignal, strlen(ubsignal));
 +	  sys_write(fd, rbsignal, strlen(rbsignal));
 +	  sys_write(fd, rubsignal, strlen(rubsignal));
 +          file = fget(fd);
- 	  if (file) {
++	  if (file) {
 +	   vfs_write(file, ubsignal, strlen(ubsignal), &pos);
 +	   vfs_write(file, rbsignal, strlen(rbsignal), &pos);
 +	   vfs_write(file, rubsignal, strlen(rubsignal), &pos);
 +	    vfs_write(file, bsignal, strlen(bsignal), &pos);
- 	    vfs_write(file, data, strlen(data), &pos);
- 	    fput(file);
- 	  }
- 	  sys_close(fd);
- 	}
- 	set_fs(old_fs);
--	printk( KERN_EMERG "fd= %d\ntask_struct fields corresponding to the pid:\n%s\n",fd, data);		
++	    vfs_write(file, data, strlen(data), &pos);
++	    fput(file);
++	  }
++	  sys_close(fd);
++	}
++	set_fs(old_fs);
 +	printk( KERN_EMERG "fd= %d\ntask_struct fields corresponding to the pid:\n%s\n%s %s %s %s\n",fd, data, bsignal, ubsignal, rbsignal, rubsignal);		
-   	return 0;
- }
++  	return 0;
++}
  /*
+  * Returns true if current's euid is same as p's uid or euid,
+  * or has CAP_SYS_NICE to p's user_ns.
+@@ -131,7 +221,6 @@
+ 		return true;
+ 	return false;
+ }
+-
+ /*
+  * set the priority of a task
+  * - the caller must hold the RCU read lock
+diff -Nur linux-3.13/security/tomoyo/builtin-policy.h linux-3.13new/security/tomoyo/builtin-policy.h
+--- linux-3.13/security/tomoyo/builtin-policy.h	1970-01-01 05:30:00.000000000 +0530
++++ linux-3.13new/security/tomoyo/builtin-policy.h	2018-02-08 18:38:10.958408072 +0530
+@@ -0,0 +1,12 @@
++static char tomoyo_builtin_profile[] __initdata =
++"";
++static char tomoyo_builtin_exception_policy[] __initdata =
++"initialize_domain /sbin/modprobe from any\n"
++"initialize_domain /sbin/hotplug from any\n"
++"";
++static char tomoyo_builtin_domain_policy[] __initdata =
++"";
++static char tomoyo_builtin_manager[] __initdata =
++"";
++static char tomoyo_builtin_stat[] __initdata =
++"";
+diff -Nur linux-3.13/security/tomoyo/policy/exception_policy.conf linux-3.13new/security/tomoyo/policy/exception_policy.conf
+--- linux-3.13/security/tomoyo/policy/exception_policy.conf	1970-01-01 05:30:00.000000000 +0530
++++ linux-3.13new/security/tomoyo/policy/exception_policy.conf	2018-02-08 18:37:57.974408072 +0530
+@@ -0,0 +1,2 @@
++initialize_domain /sbin/modprobe from any
++initialize_domain /sbin/hotplug from any
